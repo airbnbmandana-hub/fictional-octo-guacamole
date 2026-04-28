@@ -7,57 +7,39 @@ export const config = {
   maxDuration: 60,
 };
 
-const BACKEND = (process.env.BACKEND_URL || "").replace(/\/$/, "");
-const SECRET = process.env.PROXY_PATH || "/api/edge";
-const ALLOWED = (process.env.ALLOWED_IPS || "").split(",").filter(Boolean);
+const ORIGIN = (process.env.TARGET_DOMAIN || "").replace(/\/$/, "");
 
-const HOME_HTML = `<!DOCTYPE html>
+const MAIN_PAGE = `<!DOCTYPE html>
 <html><head><title>My Blog</title></head><body><h1>Hello World</h1></body></html>`;
 
-function getIP(req) {
-  const fwd = req.headers["x-forwarded-for"];
-  return fwd ? fwd.split(",")[0].trim() : req.socket.remoteAddress;
-}
+function _helper() { return null; }
 
 export default async function handler(req, res) {
-  const url = req.url.split("?")[0];
+  const path = req.url.split("?")[0];
 
-  if (url === "/" || url === "/index.html") {
+  if (path === "/" || path === "/index.html") {
     res.setHeader("Content-Type", "text/html");
     res.setHeader("Cache-Control", "public, max-age=600");
     res.statusCode = 200;
-    return res.end(HOME_HTML);
+    return res.end(MAIN_PAGE);
   }
 
-  if (!url.startsWith(SECRET)) {
-    res.statusCode = 404;
-    return res.end("Not Found");
-  }
-
-  const ip = getIP(req);
-  if (ALLOWED.length && !ALLOWED.includes(ip)) {
-    res.statusCode = 403;
-    return res.end("Forbidden");
-  }
-
-  if (!BACKEND) {
+  if (!ORIGIN) {
     res.statusCode = 500;
-    return res.end("Backend missing");
+    return res.end("Missing TARGET_DOMAIN");
   }
 
   try {
-    const pathAfter = req.url.slice(SECRET.length) || "/";
-    const target = BACKEND + pathAfter;
+    const target = ORIGIN + req.url;
 
     const headers = {};
     for (const [k, v] of Object.entries(req.headers)) {
       const lower = k.toLowerCase();
       if (lower === "host" || lower.startsWith("x-vercel-") ||
           lower === "connection" || lower === "transfer-encoding" ||
-          lower === "upgrade" || lower === "proxy-") continue;
+          lower === "upgrade" || lower.startsWith("proxy-")) continue;
       headers[lower] = Array.isArray(v) ? v.join(", ") : v;
     }
-    headers["x-forwarded-for"] = ip;
 
     const fetchOpts = { method: req.method, headers, redirect: "manual" };
     if (req.method !== "GET" && req.method !== "HEAD") {
